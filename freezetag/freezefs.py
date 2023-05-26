@@ -149,7 +149,7 @@ class FreezeFS(Operations, FileSystemEventHandler):
 
         print(f'mounting {mount_point}')
 
-        fuse_args = {'nothreads': True, 'foreground': True, 'fsname': 'freezefs', 
+        fuse_args = {'nothreads': True, 'foreground': True, 'fsname': 'freezefs',
                     'volname': Path(mount_point).name}
 
         # Only MacOS supports FUSE volume names, so remove it for other FS to prevent RuntimeError
@@ -158,7 +158,7 @@ class FreezeFS(Operations, FileSystemEventHandler):
 
         self._log_verbose(f'mounting FUSE with these args: {fuse_args}')
         FUSE(self, mount_point, **fuse_args)
-        
+
     # Helpers
     # =======
 
@@ -379,6 +379,12 @@ class FreezeFS(Operations, FileSystemEventHandler):
 
         if not frozen_entry:
             raise FuseOSError(ENOENT)
+        
+        # This is the path, relative to the freezetag file's root, that we are trying to open.
+        # Knowing this is essential to providing the correct metadata.
+        #
+        # TODO: validate that this is correct on all operating systems.
+        target_path = "/".join(frozen_entry.path.parts[2:])
 
         freezetag_path = None
         metadata = None
@@ -396,8 +402,11 @@ class FreezeFS(Operations, FileSystemEventHandler):
 
             for f in freezetag.data.frozen.files:
                 if f.checksum == item.checksum:
-                    metadata = f.metadata
-                    break
+                    if f.path == target_path:
+                        self._log_verbose(f'opened {f.path} as {path} (target: {target_path})')
+                        metadata = f.metadata
+                        break
+                    self._log_verbose(f'ignoring {f.path} despite matching checksum (target: {target_path})')
 
         file = FuseFile.from_info(file_entry.path, flags, metadata, file_entry.metadata_info, file_entry.metadata_len,
                                   frozen_entry.metadata_len)
